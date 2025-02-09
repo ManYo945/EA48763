@@ -11,4 +11,5 @@ Profits from this strategy remain volatile.
 ***
 This is a to-do list in order of priority.
 - [ ] `DayBreak.mq5` 解決觸發停利仍會開啟新倉問題
-  - [ ] [緊急]open price 的設定有問題，偏離價格太多，嘗試改成設定1:25~1:35(交易所時間)
+  - [X] [緊急]open price 的設定有問題，偏離價格太多，嘗試改成設定1:25~1:35(交易所時間)，正在檢查是否改善
+  - [ ] 以隨機方式或其他量化決定正反邏輯交易時機
