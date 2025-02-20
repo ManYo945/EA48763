@@ -7,7 +7,8 @@ Profits from this strategy remain volatile.
 >主要獲利來源為`SAR.mq5`(希望)
 >趨勢盤會爆虧，目前使用`DayBreak.mq5`作為彌補策略
 >目前針對單日VA型態沒有解決辦法
->time filter的有效性正在實測
+>time filter的有效性正在實測\
+>`SAR-Advanced.mq5`目的為了進階策略實驗，目前就是一坨屎
 ***
 This is a to-do list in order of priority.
 - [ ] `DayBreak.mq5` 解決觸發停利仍會開啟新倉問題
