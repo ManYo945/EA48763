@@ -1,11 +1,10 @@
 //+------------------------------------------------------------------+
-//|        VWAP Mean‑Reversion EA v1.2.1 (2025‑05‑06, MQL5)         |
-//|  • Added volume HUD, position caps, optional volume bars        |
-//|  • Fix: volume bars use OBJ_TREND (all builds compatible)       |
+//|        VWAP Mean‑Reversion EA v0.1.1 (2025‑05‑09, MQL5)         |
+//|      ● Reset the input variables to default values.             |
 //+------------------------------------------------------------------+
 #property copyright "ManYo"
 #property link      "https://github.com/ManYo945/EA48763"
-#property version   "0.1.0"
+#property version   "0.1.1"
 #property strict
 
 #include <Trade/Trade.mqh>
@@ -14,15 +13,15 @@
 input ENUM_TIMEFRAMES TF          = PERIOD_M1;     // Working timeframe
 input double        DeviationPts  = 500;           // Entry threshold (points)
 input double        StopLossPts   = 800;           // Stop‑loss distance (points)
-input double        Lots          = 0.05;          // Lot size per entry
-input int           MaxPositions  = 1;             // Max simultaneous positions
-input int           MaxTradesDay  = 3;             // Max new trades per day
-input uint          MagicNumber   = 20250506;      // Unique magic number
+input double        Lots          = 0.01;          // Lot size per entry
+input int           MaxPositions  = 2;             // Max simultaneous positions
+input int           MaxTradesDay  = 8;             // Max new trades per day
+input uint          MagicNumber   = 300;      // Unique magic number
 input bool          TimeFilter    = false;         // Enable trading window
-input int           StartHour     = 0;
+input int           StartHour     = 1;
 input int           StartMin      = 0;
 input int           EndHour       = 23;
-input int           EndMin        = 59;
+input int           EndMin        = 0;
 input bool          ShowVolHist   = false;         // Draw volume histogram bars
 
 //‑‑‑ Globals ------------------------------------------------------------------
@@ -201,8 +200,6 @@ void OnTick()
 
 //+------------------------------------------------------------------+
 //| CHANGELOG                                                        |
-//| v1.2.1 (2025‑05‑06)                                              |
-//|  • Added volume bars with OBJ_TREND                              |
-//|  • HUD shows volume & deviation                                  |
-//|  • Limits on positions and daily trades                          |
+//| v0.1.0 (2025‑05‑09)                                              |
+//|  • New EA based on VWAP mean‑reversion strategy                  |
 //+------------------------------------------------------------------+
