@@ -70,11 +70,32 @@ void CloseMyPositions()
 int MyOpenPositions()
 {
    int cnt = 0;
-   for(int i=PositionsTotal()-1;i>=0;--i)
-      if(PositionGetInteger(POSITION_MAGIC)==MagicNumber && PositionGetString(POSITION_SYMBOL)==_Symbol)
-         cnt++;
+   for(int i = PositionsTotal() - 1; i >= 0; --i)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket==0) continue;
+
+      // MT5 build < 2000 may not expose PositionSelectByIndex; use ticket fallback
+   #ifdef __MQL5__
+      #ifdef PositionSelectByIndex
+         if(!PositionSelectByIndex(i))
+            continue;
+      #else
+         if(!PositionSelectByTicket(ticket))
+            continue;
+      #endif
+   #else
+      if(!PositionSelectByTicket(ticket))
+         continue;
+   #endif
+
+      if(PositionGetInteger(POSITION_MAGIC)  != (long)MagicNumber) continue;
+      if(PositionGetString (POSITION_SYMBOL) != _Symbol)           continue;
+      cnt++;
+   }
    return cnt;
 }
+
 
 //‑‑‑ Utility: trading window --------------------------------------------------
 bool InTradingWindow()
@@ -155,10 +176,11 @@ void OnTick()
 
    // HUD comment
    double deviation_pts = (close1 - vwap) / _Point;
-   Comment(StringFormat("VWAP: %.5f\nPrice: %.5f\nVolume: %ld\nDeviation: %.1f pts", vwap, close1, vol1, deviation_pts));
+   int myPos = MyOpenPositions();
+   Comment(StringFormat("VWAP: %.5f\nPrice: %.5f\nVolume: %ld\nDeviation: %.1f pts\nNow position: %d\n coda: %d/%d", vwap, close1, vol1, deviation_pts, myPos, trades_today, MaxTradesDay));
 
    // Guard: position & trade limits
-   if(MyOpenPositions() >= MaxPositions) return;
+   if(myPos >= MaxPositions) return;
    if(trades_today    >= MaxTradesDay)  return;
 
    // Prices
@@ -200,6 +222,5 @@ void OnTick()
 
 //+------------------------------------------------------------------+
 //| CHANGELOG                                                        |
-//| v0.1.0 (2025‑05‑09)                                              |
-//|  • New EA based on VWAP mean‑reversion strategy                  |
+//| v0.1.1 (2025‑05‑11)                                              |
 //+------------------------------------------------------------------+
