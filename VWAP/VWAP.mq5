@@ -1,28 +1,33 @@
 //+------------------------------------------------------------------+
-//|        VWAP Mean‑Reversion EA v0.1.1 (2025‑05‑09, MQL5)         |
-//|      ● Reset the input variables to default values.             |
+//|   VWAP Dual-Mode EA v0.2.0 (2025-08-18, MQL5)                   |
+//|   • Mean-Reversion or Breakout selectable by input.             |
 //+------------------------------------------------------------------+
 #property copyright "ManYo"
 #property link      "https://github.com/ManYo945/EA48763"
-#property version   "0.1.1"
+#property version   "0.2.0"
 #property strict
 
 #include <Trade/Trade.mqh>
 
 //‑‑‑ User Inputs --------------------------------------------------------------
-input ENUM_TIMEFRAMES TF          = PERIOD_M1;     // Working timeframe
-input double        DeviationPts  = 500;           // Entry threshold (points)
-input double        StopLossPts   = 800;           // Stop‑loss distance (points)
+input ENUM_TIMEFRAMES TF          = PERIOD_M15;     // Working timeframe
+input double        DeviationPts  = 600;           // Entry threshold (points)
+input double        StopLossPts   = 700;           // Stop‑loss distance (points)
 input double        Lots          = 0.01;          // Lot size per entry
 input int           MaxPositions  = 2;             // Max simultaneous positions
-input int           MaxTradesDay  = 8;             // Max new trades per day
+input int           MaxTradesDay  = 10;             // Max new trades per day
 input uint          MagicNumber   = 300;      // Unique magic number
-input bool          TimeFilter    = false;         // Enable trading window
-input int           StartHour     = 1;
+input bool          TimeFilter    = true;         // Enable trading window
+input int           StartHour     = 6;
 input int           StartMin      = 0;
-input int           EndHour       = 23;
-input int           EndMin        = 0;
-input bool          ShowVolHist   = false;         // Draw volume histogram bars
+input int           EndHour       = 16;
+input int           EndMin        = 30;
+input bool          ShowVolHist   = true;         // Draw volume histogram bars
+
+// ▼ New: strategy mode
+enum ENUM_STRAT_MODE { MODE_MEAN_REVERSION=0, MODE_BREAKOUT=1 };
+input ENUM_STRAT_MODE Mode = MODE_BREAKOUT;   // Trading logic mode
+input double        RR            = 1.32;           // Breakout TP = RR * StopLossPts
 
 //‑‑‑ Globals ------------------------------------------------------------------
 CTrade   trade;
@@ -53,15 +58,35 @@ int OnInit()
 
 void OnDeinit(const int reason){}
 
+
+//+------------------------------------------------------------------+
+//| Compatibility helpers                                            |
+//+------------------------------------------------------------------+
+bool SelectPositionByIndexCompat(int index, ulong &ticket_out)
+{
+   ticket_out = PositionGetTicket(index);
+   if(ticket_out==0) return false;
+   return PositionSelectByTicket(ticket_out);
+}
+
+
 //‑‑‑ Utility: close EA positions --------------------------------------------
 void CloseMyPositions()
 {
    for(int i=PositionsTotal()-1;i>=0;--i)
    {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket==0)              continue;
-      if(PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
-      if(PositionGetString (POSITION_SYMBOL)!=_Symbol)     continue;
+      // ulong ticket = PositionGetTicket(i);
+      // if(ticket==0)              continue;
+      // if(PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
+      // if(PositionGetString (POSITION_SYMBOL)!=_Symbol)     continue;
+      // trade.PositionClose(ticket);
+      
+      ulong ticket;
+      if(!SelectPositionByIndexCompat(i, ticket)) continue;
+
+      if((uint)PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol)          continue;
+
       trade.PositionClose(ticket);
    }
 }
@@ -70,27 +95,38 @@ void CloseMyPositions()
 int MyOpenPositions()
 {
    int cnt = 0;
-   for(int i = PositionsTotal() - 1; i >= 0; --i)
+   // for(int i = PositionsTotal() - 1; i >= 0; --i)
+   // {
+   //    ulong ticket = PositionGetTicket(i);
+   //    if(ticket==0) continue;
+
+   //    // MT5 build < 2000 may not expose PositionSelectByIndex; use ticket fallback
+   // #ifdef __MQL5__
+   //    #ifdef PositionSelectByIndex
+   //       if(!PositionSelectByIndex(i))
+   //          continue;
+   //    #else
+   //       if(!PositionSelectByTicket(ticket))
+   //          continue;
+   //    #endif
+   // #else
+   //    if(!PositionSelectByTicket(ticket))
+   //       continue;
+   // #endif
+
+   //    if(PositionGetInteger(POSITION_MAGIC)  != (long)MagicNumber) continue;
+   //    if(PositionGetString (POSITION_SYMBOL) != _Symbol)           continue;
+   //    cnt++;
+   // }
+
+   for(int i=PositionsTotal()-1;i>=0;--i)
    {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket==0) continue;
+      ulong ticket;
+      if(!SelectPositionByIndexCompat(i, ticket)) continue;
 
-      // MT5 build < 2000 may not expose PositionSelectByIndex; use ticket fallback
-   #ifdef __MQL5__
-      #ifdef PositionSelectByIndex
-         if(!PositionSelectByIndex(i))
-            continue;
-      #else
-         if(!PositionSelectByTicket(ticket))
-            continue;
-      #endif
-   #else
-      if(!PositionSelectByTicket(ticket))
-         continue;
-   #endif
+      if((uint)PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol)          continue;
 
-      if(PositionGetInteger(POSITION_MAGIC)  != (long)MagicNumber) continue;
-      if(PositionGetString (POSITION_SYMBOL) != _Symbol)           continue;
       cnt++;
    }
    return cnt;
@@ -138,8 +174,45 @@ void DrawMarker(bool isBuy, double price)
    ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
 }
 
+//─── Helpers: SL/TP calculation ────────────────────────────────────
+double ComputeSL(bool isBuy, double entry_price)
+{
+   double sl = entry_price + (isBuy ? -1.0 : +1.0) * StopLossPts * _Point;
+   return NormalizeDouble(sl, _Digits);
+}
+
+double ComputeTP(bool isBuy, double entry_price, double vwap_current)
+{
+   if(Mode==MODE_MEAN_REVERSION)
+   {
+      return NormalizeDouble(vwap_current, _Digits);
+   }
+   // Breakout: RR * StopLossPts from entry
+   double tp = entry_price + (isBuy ? +1.0 : -1.0) * (RR * StopLossPts) * _Point;
+   return NormalizeDouble(tp, _Digits);
+}
+
+void CloseIfRevertToVWAP(double vwap, double close1)
+{
+   for(int i=PositionsTotal()-1; i>=0; --i)
+   {
+      ulong ticket;
+      if(!SelectPositionByIndexCompat(i, ticket)) continue;
+
+      if((uint)PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol)          continue;
+
+      long type = (long)PositionGetInteger(POSITION_TYPE);
+      if( (type==POSITION_TYPE_BUY  && close1 >= vwap) ||
+          (type==POSITION_TYPE_SELL && close1 <= vwap) )
+      {
+         trade.PositionClose(ticket);
+      }
+   }
+}
+
 //+------------------------------------------------------------------+
-//| Main logic (runs once per new bar)                               |
+//| Main                                                             |
 //+------------------------------------------------------------------+
 void OnTick()
 {
@@ -187,40 +260,89 @@ void OnTick()
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
-   // Entry conditions
-   if(deviation_pts < -DeviationPts)
+   // ── Entry conditions ───────────────────────────────────────────
+   bool fireBuy=false, fireSell=false;
+
+   if(Mode==MODE_MEAN_REVERSION)
    {
-      double sl = NormalizeDouble(bid - StopLossPts * _Point, _Digits);
-      double tp = NormalizeDouble(vwap, _Digits);
-      if(trade.Buy(Lots, _Symbol, ask, sl, tp, "VWAP Buy"))
+      // Mean reversion: fade distance to VWAP
+      if(deviation_pts < -DeviationPts) fireBuy  = true;  // price << vwap
+      if(deviation_pts > +DeviationPts) fireSell = true;  // price >> vwap
+   }
+   else // MODE_BREAKOUT
+   {
+      // Breakout: follow distance from VWAP
+      if(deviation_pts > +DeviationPts) fireBuy  = true;  // strength continues
+      if(deviation_pts < -DeviationPts) fireSell = true;  // weakness continues
+   }
+
+   
+   // Buy
+   if(fireBuy)
+   {
+      double entry = ask;
+      double sl = ComputeSL(true, entry);
+      double tp = ComputeTP(true, entry, vwap);
+      if(trade.Buy(Lots, _Symbol, entry, sl, tp, Mode==MODE_MEAN_REVERSION?"VWAP Buy MR":"VWAP Buy BO"))
       {
          trades_today++;
          DrawMarker(true, vwap);
       }
    }
-   else if(deviation_pts > DeviationPts)
+
+   // Sell
+   if(fireSell)
    {
-      double sl = NormalizeDouble(ask + StopLossPts * _Point, _Digits);
-      double tp = NormalizeDouble(vwap, _Digits);
-      if(trade.Sell(Lots, _Symbol, bid, sl, tp, "VWAP Sell"))
+      double entry = bid;
+      double sl = ComputeSL(false, entry);
+      double tp = ComputeTP(false, entry, vwap);
+      if(trade.Sell(Lots, _Symbol, entry, sl, tp, Mode==MODE_MEAN_REVERSION?"VWAP Sell MR":"VWAP Sell BO"))
       {
          trades_today++;
          DrawMarker(false, vwap);
       }
    }
 
-   // Exit logic: close when price reverts to VWAP
-   for(int i = PositionsTotal()-1; i>=0; --i)
-   {
-      if(PositionGetInteger(POSITION_MAGIC)!=MagicNumber || PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
-      long type = PositionGetInteger(POSITION_TYPE);
-      if((type==POSITION_TYPE_BUY  && close1 >= vwap) ||
-         (type==POSITION_TYPE_SELL && close1 <= vwap))
-         trade.PositionClose(PositionGetTicket(i));
-   }
+   // Exits
+   if(Mode==MODE_MEAN_REVERSION)
+      CloseIfRevertToVWAP(vwap, close1); // Breakout uses SL/TP only
+
+   // // Entry conditions
+   // if(deviation_pts < -DeviationPts)
+   // {
+   //    double sl = NormalizeDouble(bid - StopLossPts * _Point, _Digits);
+   //    double tp = NormalizeDouble(vwap, _Digits);
+   //    if(trade.Buy(Lots, _Symbol, ask, sl, tp, "VWAP Buy"))
+   //    {
+   //       trades_today++;
+   //       DrawMarker(true, vwap);
+   //    }
+   // }
+   // else if(deviation_pts > DeviationPts)
+   // {
+   //    double sl = NormalizeDouble(ask + StopLossPts * _Point, _Digits);
+   //    double tp = NormalizeDouble(vwap, _Digits);
+   //    if(trade.Sell(Lots, _Symbol, bid, sl, tp, "VWAP Sell"))
+   //    {
+   //       trades_today++;
+   //       DrawMarker(false, vwap);
+   //    }
+   // }
+
+   // // Exit logic: close when price reverts to VWAP
+   // for(int i = PositionsTotal()-1; i>=0; --i)
+   // {
+   //    if(PositionGetInteger(POSITION_MAGIC)!=MagicNumber || PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+   //    long type = PositionGetInteger(POSITION_TYPE);
+   //    if((type==POSITION_TYPE_BUY  && close1 >= vwap) ||
+   //       (type==POSITION_TYPE_SELL && close1 <= vwap))
+   //       trade.PositionClose(PositionGetTicket(i));
+   // }
 }
 
 //+------------------------------------------------------------------+
 //| CHANGELOG                                                        |
-//| v0.1.1 (2025‑05‑11)                                              |
+//| v0.2.0 (2025-08-18) Added dual mode: Mean-Reversion & Breakout. |
+//| TP for Breakout = RR * StopLossPts from entry; MR keeps TP=VWAP. |
+//| Cleaned position iteration with PositionSelectByIndex.           |
 //+------------------------------------------------------------------+
