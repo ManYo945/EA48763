@@ -1,5 +1,5 @@
 ## EA48763 SAR Strategy
-version 1.0.0 (Date 2025/02/07)\
+`SAR.mq5` update to version 1.102 (Date 2025/09/30)\
 `DayBreak.mq5` and `SAR.mq5` must currently be run together.
 Profits from this strategy remain volatile.
 ***
