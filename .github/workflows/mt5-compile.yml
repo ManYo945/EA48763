@@ -31,10 +31,25 @@ jobs:
     runs-on: [self-hosted, windows, mt5]
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - name: Manual checkout
+        shell: pwsh
+        run: |
+          $repoUrl = "https://github.com/${{ github.repository }}.git"
+          $branch = "${{ github.ref_name }}"
+          $workDir = Join-Path $env:RUNNER_WORKSPACE "repo"
+
+          if (-not (Test-Path $workDir)) {
+            git clone $repoUrl $workDir
+            if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
+          }
+
+          Set-Location $workDir
+          git remote set-url origin $repoUrl
+          git fetch --all --prune
+          git checkout $branch
+          git reset --hard ${{ github.sha }}
+          git clean -fd
+          git log --oneline -n 5
 
       - name: Show git info
         shell: pwsh
@@ -58,9 +73,10 @@ jobs:
       - name: Run compile script
         shell: pwsh
         run: |
-          pwsh -File .\MQL5_CI\compile.ps1 `
-            -Mode "${{ steps.params.outputs.mode }}" `
-            -BaseRef "${{ steps.params.outputs.base_ref }}"
+          $workDir = Join-Path $env:RUNNER_WORKSPACE "repo"
+          Set-Location $workDir
+
+          pwsh -File .\MQL5_CI\compile.ps1 -Mode All
 
       - name: Upload compile log
         if: always()
