@@ -1,9 +1,79 @@
-name: Test CI
+name: MT5 Compile
 
-on: [push]
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - '**/*.mq5'
+      - '**/*.mqh'
+      - 'MQL5_CI/**'
+      - '.github/workflows/mt5-compile.yml'
+
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Compile mode'
+        required: true
+        default: 'Changed'
+        type: choice
+        options:
+          - Changed
+          - All
+      base_ref:
+        description: 'Base ref for Changed mode'
+        required: false
+        default: 'HEAD~1'
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  compile:
+    runs-on: [self-hosted, windows, mt5]
+
     steps:
-      - run: echo "Hello CI"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show git info
+        shell: pwsh
+        run: |
+          git status
+          git log --oneline -n 5
+
+      - name: Set compile parameters
+        id: params
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "mode=${{ inputs.mode }}" >> $env:GITHUB_OUTPUT
+            "base_ref=${{ inputs.base_ref }}" >> $env:GITHUB_OUTPUT
+          }
+          else {
+            "mode=Changed" >> $env:GITHUB_OUTPUT
+            "base_ref=HEAD~1" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Run compile script
+        shell: pwsh
+        run: |
+          pwsh -File .\MQL5_CI\compile.ps1 `
+            -Mode "${{ steps.params.outputs.mode }}" `
+            -BaseRef "${{ steps.params.outputs.base_ref }}"
+
+      - name: Upload compile log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-log
+          path: .\MQL5_CI\compile_all.log
+
+      - name: Upload compiled ex5 files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiled-ex5
+          path: |
+            **/*.ex5
+          if-no-files-found: ignore
