@@ -76,20 +76,36 @@ jobs:
           $workDir = Join-Path $env:RUNNER_WORKSPACE "repo"
           Set-Location $workDir
 
-          pwsh -File .\MQL5_CI\compile.ps1 -Mode All
+          pwsh -File .\MQL5_CI\compile.ps1 `
+          -Mode "${{ steps.params.outputs.mode }}" `
+          -BaseRef "${{ steps.params.outputs.base_ref }}"
 
+      - name: Debug generated files
+        if: always()
+        shell: pwsh
+        run: |
+          $workDir = Join-Path $env:RUNNER_WORKSPACE "repo"
+          Write-Host "Runner workspace: $env:RUNNER_WORKSPACE"
+          Write-Host "Repo dir: $workDir"
+
+          Write-Host "=== Check compile log ==="
+          Get-ChildItem -Path (Join-Path $workDir "MQL5_CI") -Force -ErrorAction SilentlyContinue
+
+          Write-Host "=== Search ex5 files ==="
+          Get-ChildItem -Path $workDir -Recurse -Filter *.ex5 -ErrorAction SilentlyContinue | Select-Object FullName
+          
       - name: Upload compile log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: compile-log
-          path: .\MQL5_CI\compile_all.log
+          path: ${{ runner.workspace }}/repo/MQL5_CI/compile_all.log
+          if-no-files-found: warn
 
       - name: Upload compiled ex5 files
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: compiled-ex5
-          path: |
-            **/*.ex5
-          if-no-files-found: ignore
+          path: ${{ runner.workspace }}/repo/**/*.ex5
+          if-no-files-found: warn
